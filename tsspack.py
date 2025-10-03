@@ -65,6 +65,26 @@ def repack_sp_file(output_dir):
         sys.exit(1)
 
 def unpack_file(input_file, output_folder):
+    # 新增文件格式检测函数
+    def detect_file_format(data):
+        """检测文件是否为GIF/JPG/ZIP格式"""
+        if len(data) < 4:
+            return None
+        
+        # 检查GIF格式 (GIF8)
+        if data.startswith(b'GIF8'):
+            return 'gif'
+        
+        # 检查JPEG格式 (FF D8 FF)
+        if data[:3] == b'\xFF\xD8\xFF':
+            return 'jpg'
+        
+        # 检查ZIP格式 (PK\x03\x04)
+        if data[:4] == b'PK\x03\x04':
+            return 'zip'
+        
+        return None
+
     with open(input_file, 'rb') as f:
         # 读取头部类型并验证
         try:
@@ -125,9 +145,20 @@ def unpack_file(input_file, output_folder):
         
         # 提取文件数据
         for i in range(file_count):
+            # 读取文件内容
+            file_data = f.read(file_sizes[i])
+            
             if header_type == 0x00:
+                # 检测文件格式
+                file_format = detect_file_format(file_data)
+                print(f"get {file_format}")
                 # 生成补零的数字文件名
                 filename = f"{i:0{len(str(file_count))}d}"
+                # 如果检测到格式则添加扩展名
+                if file_format:
+                    filename += f".{file_format}"
+                    print(f"[DEBUG] 检测到{i}号文件为{file_format.upper()}格式")
+                    print(f"Detected {file_format.upper()} format for file {i}")
             else:
                 # 添加序号前缀
                 prefix = f"#{i:0{len(str(file_count))}d}#-"
@@ -136,7 +167,7 @@ def unpack_file(input_file, output_folder):
             file_path = output_path / filename
             try:
                 with open(file_path, 'wb') as out_file:
-                    out_file.write(f.read(file_sizes[i]))
+                    out_file.write(file_data)
             except IOError as e:
                 print(f"Error: Failed to write file {filename} - {str(e)}")
                 sys.exit(1)
@@ -159,19 +190,11 @@ def repack_files(input_folder, output_file):
         print("Error: Could not determine package type (missing type0 or type1 directory)")
         sys.exit(1)
     
-    # 获取文件列表（保留原始文件名）
-    if header_type == 0x00:
-        # 按数字顺序排序
-        files = sorted(
-            [f for f in input_path.iterdir() if f.is_file() and not f.name.startswith('type') and not f.name.startswith('size')],
-            key=lambda x: int(x.name)
-        )
-    else:
-        # 按文件名排序（保留原始文件名）
-        files = sorted(
-            [f for f in input_path.iterdir() if f.is_file() and not f.name.startswith('type') and not f.name.startswith('size')],
-            key=lambda x: x.name
-        )
+    # 获取文件列表并排序（保留原始文件名）
+    files = sorted(
+        [f for f in input_path.iterdir() if f.is_file() and not f.name.startswith('type') and not f.name.startswith('size')],
+        key=lambda x: x.name
+    )
     
     file_count = len(files)
     if file_count == 0:
@@ -232,7 +255,7 @@ def get_original_name(filename):
     return filename
 
 def main():
-    if len(sys.argv) < 3:
+    if len(sys.argv) < 3 or len(sys.argv) >4:
         print("Usage:")
         print("  Unpack: tsspack.py unpacksp input_folder")
         print("  Repack: tsspack.py repacksp input_folder")
